@@ -8,6 +8,7 @@
 #include <thread>
 #include <chrono>
 #include <atomic>
+#include <mutex>
 
 #include "structures.h"
 
@@ -21,15 +22,15 @@ class Ball
     {
         
         //std::cout << "GET " << this << " | " << possitX << " | " << possitY << "\n";
-        return possitX;
-        // return position.x;
+        // return possitX;
+        return position.x;
         //return positionX.load();
     }
 
     float getY()
     {
-        return possitY;
-        // return position.y;
+        // return possitY;
+         return position.y;
         //return positionY.load();
     }
 
@@ -43,22 +44,35 @@ class Ball
         end = true;
     }
 
-    int calculateNevCoordinate();
+    const Color * const getColor()
+    {
+        return &color;
+    }
+
+    int calculateNevCoordinate(const std::atomic<bool> * const pause);
 
 private:
+
     bool end;
-    float possitX;
-    float possitY;
-    vector2d position;
-    vector2d directionVector;
-    double verticalDirect;
-    double horizontalDirect;
-    int isMovingY;
-    int isMovingX;
+
+    // int isMovingY;
+    // int isMovingX;
+
     float r;
 
-    static bool setSeed;
-    static void setRandomDirectionVertex(Ball *ball);
+    double verticalDirect;
+
+    static std::once_flag onceFlagRandSeedForBall;
+
+    std::atomic<bool> isMovingY;
+    std::atomic<bool> isMovingX;
+
+    Color color;
+
+    vector2d position;
+    vector2d directionVector;
+
+    void setRandomDirectionVertex();
 };
 
 #endif //BALL_H

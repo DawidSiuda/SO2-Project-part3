@@ -13,32 +13,86 @@
 #include "Ball.h"
 #include "structures.h"
  
-int myPause = 0;
+std::atomic<bool> myPause(false);
 int endProgram = 0;
 int windowID = -1;
 
-std::queue<std::thread*> myThreads;
+std::mutex mutexBallsVectorDrawing;
+std::mutex mutexBallsVectorCheckingCollizions;
 
-std::vector<Ball*> balls;
+struct BallWithOwnThread
+{
+    BallWithOwnThread( const std::atomic<bool> * const pauseFlag, float posX, float posY, float r, float movX, float movY)
+    {
+        ball = new Ball( posX, posY, r, movX, movY);
+        thread = new std::thread(&Ball::calculateNevCoordinate, ball, pauseFlag);
+    }
 
-std::mutex mutexBallsVector;
+    ~BallWithOwnThread()
+    {
+        //std::cout<<"Destructor\n";
+        delete ball;
+        delete thread;
+    }
+
+    Ball * ball = nullptr;
+    std::thread * thread = nullptr;
+};
+
+std::vector<BallWithOwnThread*> balls;
+
+void checkCollisions(std::vector<BallWithOwnThread*> * const balls)
+{
+    mutexBallsVectorCheckingCollizions.lock();
+
+        // for (std::vector<BallWithOwnThread*>::iterator itBallForCheck = balls->begin() ; itBallForCheck != balls->end(); ++itBallForCheck)
+        // {   
+        //     int tempX = (*itBallForCheck)->ball->getX();
+        //     int tempY = (*itBallForCheck)->ball->getY();
+        //     int tempR = (*itBallForCheck)->ball->getR();
+
+        //     for (std::vector<BallWithOwnThread*>::iterator itComparingBall = itBallForCheck+1 ; itComparingBall  != balls->end(); ++itComparingBall)
+        //     {   
+        //         int secondTempX = (*itComparingBall)->ball->getX();
+        //         int secondTempY = (*itComparingBall)->ball->getY();
+        //         int secondTempR = (*itComparingBall)->ball->getR();
+
+        //         if ((*itComparingBall)->ball->getX()+ )
+        //     }
+        // }
+
+
+    mutexBallsVectorCheckingCollizions.unlock();
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000 / FPS));
+}
 
 void DrawCircle(Ball *ball) 
 {
     float ballX = ball->getX();
     float ballY = ball->getY();
+    float r     = ball->getR();
+    float theta=0;
+
+    const Color * const color = ball->getColor();
 
     //std::cout << "Draw " << ballX  << " | " << ballY << "\n";
 
-    glBegin(GL_LINE_LOOP);
+    glColor3b(color->r, color->g, color->b);
 
-    for (int ii = 0; ii < 100; ii++)   {
-        float theta = 2.0f * 3.1415926f * float(ii) / float(100);//get the current angle 
-        float x = ball->getR() * cosf(theta);//calculate the x component 
-        float y = ball->getR() * sinf(theta);//calculate the y component 
-        glVertex2f(x + ballX, y + ballY);//output vertex 
-    }
+	glBegin(GL_POLYGON);
+
+	while(theta<2*M_PI)
+    {
+		glVertex3f(ballX,ballY,0);
+		glVertex3f(ballX+(r*cos(theta)),ballY+(r*sin(theta)),0);
+		theta+=0.5;
+		glVertex3f(ballX+(r*cos(theta)),ballY+(r*sin(theta)),0);
+		glVertex3f(ballX,ballY,0);
+	}
+
     glEnd();
+
 }
 
 void main_loop_function() 
@@ -75,12 +129,12 @@ void main_loop_function()
         }
         #else // Use thread
         {
-            mutexBallsVector.lock();
-            for (std::vector<Ball*>::iterator it = balls.begin() ; it != balls.end(); ++it)
+            mutexBallsVectorDrawing.lock();
+            for (std::vector<BallWithOwnThread*>::iterator it = balls.begin() ; it != balls.end(); ++it)
             {   
-                DrawCircle(*it);
+                DrawCircle((*it)->ball);
             }
-            mutexBallsVector.unlock();
+            mutexBallsVectorDrawing.unlock();
         }
         #endif
 
@@ -99,17 +153,22 @@ void keyboard(unsigned char key, int x, int y)
 {
     if(key=='p' || key=='P')
 	{
-		myPause = myPause ? 0 : 1;
+		//myPause = myPause ? 0 : 1;
+
+        myPause.store(!myPause.load());
+        
     }
 
     if(key=='n' || key=='N')
 	{
-        mutexBallsVector.lock();
-		balls.push_back(new Ball(0,-1,0.05,0,0));
+        // To change...  mutexes should be set one by one, not both in the same time.
+        std::lock(mutexBallsVectorDrawing, mutexBallsVectorCheckingCollizions);
+		//balls.push_back(new Ball(0,-1,0.05,0,0));
         
         try 
         {
-            myThreads.push(new std::thread(&Ball::calculateNevCoordinate, (balls.back())));
+            balls.push_back(new BallWithOwnThread(&myPause,0,-1,0.05,0,0));
+            //myThreads.push(new std::thread(&Ball::calculateNevCoordinate, (balls.back()), &myPause));
         }
         catch (const std::exception& e) 
         {
@@ -122,31 +181,27 @@ void keyboard(unsigned char key, int x, int y)
             return;
         }
 
-        mutexBallsVector.unlock();
+        mutexBallsVectorDrawing.unlock();
+        mutexBallsVectorCheckingCollizions.unlock();
     }
 
     if(key=='e' || key=='E')
 	{
-        mutexBallsVector.lock();
-        for (std::vector<Ball*>::iterator it = balls.begin() ; it != balls.end(); ++it)
+        std::lock(mutexBallsVectorDrawing, mutexBallsVectorCheckingCollizions);
+        for (std::vector<BallWithOwnThread*>::iterator it = balls.begin() ; it != balls.end(); ++it)
         {   
-            (*it)->setEndLoop();
+            (*it)->ball->setEndLoop();
         }
 
-        while (myThreads.empty()== false)
-        {   
-            // myThreads.back()->join();
-            myThreads.front()->join();
-            myThreads.pop();
-        }
-
-        while(balls.empty() == false)
-        {   
+        while (balls.empty() == false)
+        {
+            balls.back()->thread->join();
             delete balls.back();
             balls.pop_back();
         }
 
-        mutexBallsVector.unlock();
+        mutexBallsVectorDrawing.unlock();
+        mutexBallsVectorCheckingCollizions.unlock();
 
         glutDestroyWindow(windowID);
         exit (0);

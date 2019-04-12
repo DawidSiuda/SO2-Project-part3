@@ -13,5 +13,5 @@ Ball.o: Ball.cpp Ball.h
 	$(CC) -c $(DEFINES) $(CFLAGS) Ball.cpp -o Ball.o
 
 clean:
-	-rm *.o
+	-rm -f *.o
 
