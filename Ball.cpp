@@ -5,7 +5,8 @@ std::once_flag Ball::onceFlagRandSeedForBall;
 Ball::Ball(float posX, float posY, float r, float movX, float movY) : position(posX, posY),
                                                                       directionVector(movX, movY),
                                                                       isMovingY(true),
-                                                                      isMovingX(true)
+                                                                      isMovingX(true),
+                                                                      isFrozen(false)
 {
     std::call_once(Ball::onceFlagRandSeedForBall, []{srand(time(NULL)); std::cout << "--> Log: Set seed for Ball\n";});
 
@@ -41,7 +42,9 @@ int Ball::calculateNevCoordinate(const std::atomic<bool> * const pause)
 {
     while (end == false)
     {
-        if(pause->load() == false)
+        mutexChangingDirectionVector.lock();
+
+        if(pause->load() == false && isFrozen.load() == false)
         {
             vector2d tempPosition = position;
             if (isMovingY.load() == true)
@@ -146,6 +149,307 @@ int Ball::calculateNevCoordinate(const std::atomic<bool> * const pause)
             //std::cout << "LOOP " << this << " | " << possitX << " | " << possitY << "\n";
         }
 
+        mutexChangingDirectionVector.unlock();
+
         std::this_thread::sleep_for(std::chrono::milliseconds(1000 / FPS));
     }
+}
+
+int Ball::handleCillizion(Ball *firstBall, Ball *secondBall)
+{
+    if(firstBall->isFrozen.load() == false)
+    {
+        firstBall->isFrozen.store(true);
+        secondBall->isFrozen.store(false);
+
+        secondBall->mutexChangingDirectionVector.lock();
+
+        //
+        // X
+        //
+
+        if(firstBall->directionVector.x > 0)
+        {
+            // First -->
+            if(secondBall->directionVector.x > 0)
+            {
+                // SECOND -->
+                if(secondBall->position.x < firstBall->position.x)
+                {
+                    secondBall->directionVector.x = -1.0 *(secondBall->directionVector.x + firstBall->directionVector.x);
+                    secondBall->position.x = (firstBall->position.x - firstBall->r) - secondBall->r;
+                }
+                else 
+                {
+                    secondBall->directionVector.x = secondBall->directionVector.x + firstBall->directionVector.x;
+                    secondBall->position.x = (firstBall->position.x + firstBall->r) + secondBall->r;
+                }
+            }
+            else
+            {
+                // SECOND <--
+                secondBall->directionVector.x = -1.0 *(secondBall->directionVector.x + firstBall->directionVector.x);
+                secondBall->position.x = (firstBall->position.x + firstBall->r) + secondBall->r;
+            }
+        }
+        else
+        {
+            // First <--
+            if(secondBall->directionVector.x >= 0)
+            {  
+                // Second -->
+                secondBall->directionVector.x = -1.0 *(secondBall->directionVector.x + firstBall->directionVector.x);
+                secondBall->position.x = (firstBall->position.x - firstBall->r) - secondBall->r;
+            }
+            else
+            {
+                // Second <--
+                if(secondBall->position.x < firstBall->position.x)
+                {
+                    secondBall->directionVector.x = (secondBall->directionVector.x + firstBall->directionVector.x);
+                    secondBall->position.x = (firstBall->position.x - firstBall->r) - secondBall->r;
+                }
+                else
+                {
+                    secondBall->directionVector.x = -1.0 *(secondBall->directionVector.x + firstBall->directionVector.x);
+                    secondBall->position.x = (firstBall->position.x + firstBall->r) + secondBall->r;
+                }
+            }
+        }
+
+        //
+        // Y
+        //
+
+        if(firstBall->verticalDirect > 0)
+        {
+            // first ^
+            if(secondBall->verticalDirect > 0)
+            {
+                // second ^
+                if(secondBall->position.y < firstBall->position.y)
+                {
+                    // firsrt
+                    // second 
+                    secondBall->directionVector.y = secondBall->directionVector.y + firstBall->directionVector.y;
+                    secondBall->verticalDirect = -1;
+                    secondBall->position.y = (firstBall->position.y - firstBall->r) - secondBall->r;
+                }
+                else
+                {
+                    // second
+                    // first
+                    secondBall->directionVector.y = secondBall->directionVector.y + firstBall->directionVector.y;
+                    secondBall->verticalDirect = 1;
+                    secondBall->position.y = (firstBall->position.y + firstBall->r) + secondBall->r;
+                }
+            }
+            else
+            {
+                // second v
+                secondBall->directionVector.y = secondBall->directionVector.y + firstBall->directionVector.y;
+                secondBall->verticalDirect = 1;
+            }
+        }
+        else
+        {
+            // first v
+            if(secondBall->verticalDirect > 0)
+            {
+                // second ^
+                if(secondBall->position.y < firstBall->position.y)
+                {
+                    // firsrt
+                    // second 
+                    secondBall->directionVector.y = secondBall->directionVector.y + firstBall->directionVector.y;
+                    secondBall->verticalDirect = -1;
+                    secondBall->position.y = (firstBall->position.y - firstBall->r) - secondBall->r;
+                }
+            }
+            else
+            {
+                // second v
+
+                if(secondBall->position.y < firstBall->position.y)
+                {
+                    // firsrt
+                    // second 
+                    secondBall->directionVector.y = secondBall->directionVector.y + firstBall->directionVector.y;
+                    secondBall->verticalDirect = -1;
+                    secondBall->position.y = (firstBall->position.y - firstBall->r) - secondBall->r;
+                }
+                else
+                {
+                    // second
+                    // first
+                    secondBall->directionVector.y = secondBall->directionVector.y + firstBall->directionVector.y;
+                    secondBall->verticalDirect = 1;
+                    secondBall->position.y = (firstBall->position.y + firstBall->r) + secondBall->r;
+                }
+            }
+
+        }
+
+        secondBall->mutexChangingDirectionVector.unlock();
+
+        #ifdef SET_NULL_AFTER_COLLIZION
+        firstBall->mutexChangingDirectionVector.lock();
+        firstBall->directionVector.x = 0.1;
+        firstBall->directionVector.y = 0.1;
+        firstBall->mutexChangingDirectionVector.unlock();
+        #endif
+    }
+    else
+    {
+        //
+        // Swap names of ball.
+        //
+
+        Ball *tmp = firstBall;
+        firstBall = secondBall;
+        secondBall = tmp;
+
+        //
+        // Handle colizion.
+        //
+
+        firstBall->isFrozen.store(true);
+        secondBall->isFrozen.store(false);
+
+        secondBall->mutexChangingDirectionVector.lock();
+
+        //
+        // X
+        //
+
+        if(firstBall->directionVector.x > 0)
+        {
+            // First -->
+            if(secondBall->directionVector.x > 0)
+            {
+                if(secondBall->position.x < firstBall->position.x)
+                {
+                    secondBall->directionVector.x = -1.0 *(secondBall->directionVector.x + firstBall->directionVector.x);
+                    secondBall->position.x = (firstBall->position.x - firstBall->r) - secondBall->r;
+                }
+                else
+                {
+                    secondBall->directionVector.x = secondBall->directionVector.x + firstBall->directionVector.x;
+                    secondBall->position.x = (firstBall->position.x + firstBall->r) + secondBall->r;
+                }
+            }
+            else
+            {
+                secondBall->directionVector.x = -1.0 *(secondBall->directionVector.x + firstBall->directionVector.x);
+                secondBall->position.x = (firstBall->position.x + firstBall->r) + secondBall->r;
+            }
+        }
+        else
+        {
+            // First <--
+            if(secondBall->directionVector.x > 0)
+            {  
+                // Second -->
+                secondBall->directionVector.x = -1.0 *(secondBall->directionVector.x + firstBall->directionVector.x);
+                secondBall->position.x = (firstBall->position.x - firstBall->r) - secondBall->r;
+            }
+            else
+            {
+                // Second <--
+                if(secondBall->position.x < firstBall->position.x)
+                {
+                    secondBall->directionVector.x = (secondBall->directionVector.x + firstBall->directionVector.x);
+                    secondBall->position.x = (firstBall->position.x - firstBall->r) - secondBall->r;
+                }
+                else
+                {
+                    secondBall->directionVector.x = -1.0 *(secondBall->directionVector.x + firstBall->directionVector.x);
+                    secondBall->position.x = (firstBall->position.x + firstBall->r) + secondBall->r;
+                }
+            }
+        }
+
+        //
+        // Y
+        //
+
+        if(firstBall->verticalDirect > 0)
+        {
+            // first ^
+            if(secondBall->verticalDirect > 0)
+            {
+                // second ^
+                if(secondBall->position.y < firstBall->position.y)
+                {
+                    // firsrt
+                    // second 
+                    secondBall->directionVector.y = secondBall->directionVector.y + firstBall->directionVector.y;
+                    secondBall->verticalDirect = -1;
+                    secondBall->position.y = (firstBall->position.y - firstBall->r) - secondBall->r;
+                }
+                else
+                {
+                    // second
+                    // first
+                    secondBall->directionVector.y = secondBall->directionVector.y + firstBall->directionVector.y;
+                    secondBall->verticalDirect = 1;
+                    secondBall->position.y = (firstBall->position.y + firstBall->r) + secondBall->r;
+                }
+            }
+            else
+            {
+                // second v
+                secondBall->directionVector.y = secondBall->directionVector.y + firstBall->directionVector.y;
+                secondBall->verticalDirect = 1;
+            }
+        }
+        else
+        {
+            // first v
+            if(secondBall->verticalDirect > 0)
+            {
+                // second ^
+                if(secondBall->position.y < firstBall->position.y)
+                {
+                    // firsrt
+                    // second 
+                    secondBall->directionVector.y = secondBall->directionVector.y + firstBall->directionVector.y;
+                    secondBall->verticalDirect = -1;
+                    secondBall->position.y = (firstBall->position.y - firstBall->r) - secondBall->r;
+                }
+            }
+            else
+            {
+                // second v
+
+                if(secondBall->position.y < firstBall->position.y)
+                {
+                    // firsrt
+                    // second 
+                    secondBall->directionVector.y = secondBall->directionVector.y + firstBall->directionVector.y;
+                    secondBall->verticalDirect = -1;
+                    secondBall->position.y = (firstBall->position.y - firstBall->r) - secondBall->r;
+                }
+                else
+                {
+                    // second
+                    // first
+                    secondBall->directionVector.y = secondBall->directionVector.y + firstBall->directionVector.y;
+                    secondBall->verticalDirect = 1;
+                    secondBall->position.y = (firstBall->position.y + firstBall->r) + secondBall->r;
+                }
+            }
+
+        }
+
+        secondBall->mutexChangingDirectionVector.unlock();
+
+        #ifdef SET_NULL_AFTER_COLLIZION
+        firstBall->mutexChangingDirectionVector.lock();
+        firstBall->directionVector.x = 0.1;
+        firstBall->directionVector.y = 0.1;
+        firstBall->mutexChangingDirectionVector.unlock();
+        #endif
+    }
+    return 0;
 }

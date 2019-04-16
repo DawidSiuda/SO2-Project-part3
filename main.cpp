@@ -43,28 +43,52 @@ std::vector<BallWithOwnThread*> balls;
 
 void checkCollisions(std::vector<BallWithOwnThread*> * const balls)
 {
-    mutexBallsVectorCheckingCollizions.lock();
+    while(1) // <-- to change should be pause and exit
+    {
+        mutexBallsVectorCheckingCollizions.lock();
 
-        // for (std::vector<BallWithOwnThread*>::iterator itBallForCheck = balls->begin() ; itBallForCheck != balls->end(); ++itBallForCheck)
-        // {   
-        //     int tempX = (*itBallForCheck)->ball->getX();
-        //     int tempY = (*itBallForCheck)->ball->getY();
-        //     int tempR = (*itBallForCheck)->ball->getR();
+        try
+        {
+            int i = 0, j = 0;
+            for (std::vector<BallWithOwnThread*>::iterator itFirstBall = balls->begin() ; itFirstBall  != balls->end(); ++itFirstBall)
+            {   
+                i++;
+                float firstX = (*itFirstBall)->ball->getX();
+                float firstY = (*itFirstBall)->ball->getY();
+                float firstR = (*itFirstBall)->ball->getR();
 
-        //     for (std::vector<BallWithOwnThread*>::iterator itComparingBall = itBallForCheck+1 ; itComparingBall  != balls->end(); ++itComparingBall)
-        //     {   
-        //         int secondTempX = (*itComparingBall)->ball->getX();
-        //         int secondTempY = (*itComparingBall)->ball->getY();
-        //         int secondTempR = (*itComparingBall)->ball->getR();
+                for (std::vector<BallWithOwnThread*>::iterator itSecondBall = itFirstBall +1 ; itSecondBall  != balls->end(); ++itSecondBall)
+                {   
+                    j++;
+                    float secondX = (*itSecondBall)->ball->getX();
+                    float secondY = (*itSecondBall)->ball->getY();
+                    float secondR = (*itSecondBall)->ball->getR();
 
-        //         if ((*itComparingBall)->ball->getX()+ )
-        //     }
-        // }
+                    if ( firstX + firstR + secondR > secondX && 
+                         (firstX - firstR) - secondR < secondX &&
+                         firstY + firstR + secondR > secondY &&
+                         (firstY - firstR) - secondR < secondY )
+                    {
+                        time_t my_time = time(NULL); 
+
+                        std::cout<< my_time << " :Detected collizion : "<< i << "  " << (i+j) << "\n";
+
+                        Ball::handleCillizion((*itFirstBall)->ball, (*itSecondBall)->ball);
+
+                    }
+                }
+            }
+        }
+        catch(...)
+        {
+            std::cout<<"Thrown exception line: " << __LINE__ << " File: " << __FILE__ << ".\n";
+        }
 
 
-    mutexBallsVectorCheckingCollizions.unlock();
+        mutexBallsVectorCheckingCollizions.unlock();
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(1000 / FPS));
+        std::this_thread::sleep_for(std::chrono::milliseconds(1000 / FPS));
+    }
 }
 
 void DrawCircle(Ball *ball) 
@@ -213,7 +237,10 @@ void keyboard(unsigned char key, int x, int y)
 
 int main(int argc, char** argv)
 {
-    std::cout << "Process id : " << getpid() << std::endl; 
+    std::cout << "Process id : " << getpid() << std::endl;
+
+    std::thread *threadCheckingCollizion = new std::thread(&checkCollisions, &balls);
+    //checkCollisions(std::vector<BallWithOwnThread*> * const balls)
 
     glutInit(&argc, argv);
     glutInitDisplayMode(GLUT_DOUBLE);

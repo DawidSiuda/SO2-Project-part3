@@ -39,33 +39,48 @@ class Ball
         return r;
     }
 
-    void setEndLoop()
-    {
-        end = true;
-    }
-
     const Color * const getColor()
     {
         return &color;
     }
 
+    bool getFrozeStatus()
+    {
+        return isFrozen.load();
+    }
+
+    void setEndLoop()
+    {
+        end = true;
+    }
+
+    void setFrozze()
+    {
+        isFrozen.store(true);
+    }
+
+    void setDefrozze()
+    {
+        isFrozen.store(false);
+    }
+
     int calculateNevCoordinate(const std::atomic<bool> * const pause);
+
+    static int handleCillizion(Ball *firstBall, Ball *secondBall);
 
 private:
 
     bool end;
 
-    // int isMovingY;
-    // int isMovingX;
-
     float r;
 
-    double verticalDirect;
+    int verticalDirect;
 
     static std::once_flag onceFlagRandSeedForBall;
 
     std::atomic<bool> isMovingY;
     std::atomic<bool> isMovingX;
+    std::atomic<bool> isFrozen;
 
     Color color;
 
@@ -73,6 +88,8 @@ private:
     vector2d directionVector;
 
     void setRandomDirectionVertex();
+
+    std::mutex mutexChangingDirectionVector;
 };
 
 #endif //BALL_H

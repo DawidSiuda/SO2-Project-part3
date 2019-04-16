@@ -7,10 +7,10 @@ etap1: clean Ball.o main.o
 	$(CC) -o etap1  main.o Ball.o $(LIB)
 
 main.o: main.cpp Ball.h
-	$(CC) -c $(DEFINES) $(CFLAGS) main.cpp -o main.o 
+	$(CC) -c -g $(DEFINES) $(CFLAGS) main.cpp -o main.o 
 
 Ball.o: Ball.cpp Ball.h
-	$(CC) -c $(DEFINES) $(CFLAGS) Ball.cpp -o Ball.o
+	$(CC) -c -g  $(DEFINES) $(CFLAGS) Ball.cpp -o Ball.o
 
 clean:
 	-rm -f *.o

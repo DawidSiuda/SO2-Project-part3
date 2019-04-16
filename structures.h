@@ -2,6 +2,7 @@
 #define STRUCTURES_H
 
 #define FPS 50
+#define SET_NULL_AFTER_COLLIZION
 
 class vector2d
 {
