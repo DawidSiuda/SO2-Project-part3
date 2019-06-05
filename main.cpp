@@ -9,23 +9,39 @@
 #include <thread>
 #include <unistd.h>
 #include <mutex>
+#include <string.h>
+#include <sstream>
 
 #include "Ball.h"
 #include "structures.h"
- 
+#include "Bat.h"
+
+void produceNewBall(const std::atomic<bool> *pause, const std::atomic<bool> *end);
+void keyDown(unsigned char key, int x, int y);
+
 std::atomic<bool> myPause(false);
-int endProgram = 0;
+std::atomic<bool> myEndProgram(false);
+
 int windowID = -1;
 
 std::mutex mutexBallsVectorDrawing;
 std::mutex mutexBallsVectorCheckingCollizions;
 
+std::thread *ballProducer = new std::thread(&produceNewBall, &myPause, &myEndProgram);
+
+Bat leftBat;
+Bat rightBat;
+
+
+std::atomic<int> leftScore(0);
+std::atomic<int> rightScore(0);
+
 struct BallWithOwnThread
 {
-    BallWithOwnThread( const std::atomic<bool> * const pauseFlag, float posX, float posY, float r, float movX, float movY)
+    BallWithOwnThread( const std::atomic<bool> * pauseFlag, float posX, float posY, float r, float movX, float movY)
     {
         ball = new Ball( posX, posY, r, movX, movY);
-        thread = new std::thread(&Ball::calculateNevCoordinate, ball, pauseFlag);
+        thread = new std::thread(&Ball::calculateNevCoordinate, ball, pauseFlag, &leftBat, &rightBat, &leftScore, &rightScore);
     }
 
     ~BallWithOwnThread()
@@ -41,11 +57,46 @@ struct BallWithOwnThread
 
 std::vector<BallWithOwnThread*> balls;
 
+void produceNewBall(const std::atomic<bool> *pause, const std::atomic<bool> *end)
+{
+    while(end->load() == false)
+    {
+        if(pause->load() == false)
+        {
+            // To change...  mutexes should be set one by one, not both in the same time.
+            std::lock(mutexBallsVectorDrawing, mutexBallsVectorCheckingCollizions);
+            //balls.push_back(new Ball(0,-1,0.05,0,0));
+            
+            try 
+            {
+                balls.push_back(new BallWithOwnThread(&myPause,0,0,0.025,0,0));
+            }
+            catch (const std::exception& e) 
+            {
+                std::cerr << "EXEPTION: " << e.what() << std::endl;
+                return;
+            }
+            catch (...)
+            {
+                std::cerr << "EXEPTION" << std::endl;
+                return;
+            }
+
+            mutexBallsVectorDrawing.unlock();
+            mutexBallsVectorCheckingCollizions.unlock();
+        }
+
+        //std::cout << "DAWID DAWID \n";
+        std::this_thread::sleep_for(std::chrono::milliseconds(TIME_TO_CREATE_NEW_BALL));
+    }
+}
+
 void checkCollisions(std::vector<BallWithOwnThread*> * const balls)
 {
-    while(1) // <-- to change should be pause and exit
+    while(myEndProgram.load() == false )
     {
-        mutexBallsVectorCheckingCollizions.lock();
+        // mutexBallsVectorCheckingCollizions.lock();
+        std::lock_guard<std::mutex> lg(mutexBallsVectorCheckingCollizions);
 
         try
         {
@@ -69,11 +120,11 @@ void checkCollisions(std::vector<BallWithOwnThread*> * const balls)
                          firstY + firstR + secondR > secondY &&
                          (firstY - firstR) - secondR < secondY )
                     {
-                        time_t my_time = time(NULL); 
+                        // time_t my_time = time(NULL); 
 
-                        std::cout<< my_time << " :Detected collizion : "<< i << "  " << (i+j) << "\n";
+                        // std::cout<< my_time << " :Detected collizion : "<< i << "  " << (i+j) << "\n";
 
-                        Ball::handleCillizion((*itFirstBall)->ball, (*itSecondBall)->ball);
+                       // Ball::handleCillizion((*itFirstBall)->ball, (*itSecondBall)->ball);
 
                     }
                 }
@@ -85,10 +136,11 @@ void checkCollisions(std::vector<BallWithOwnThread*> * const balls)
         }
 
 
-        mutexBallsVectorCheckingCollizions.unlock();
+        //mutexBallsVectorCheckingCollizions.unlock();
 
         std::this_thread::sleep_for(std::chrono::milliseconds(1000 / FPS));
     }
+    //std::cout << "END\n";
 }
 
 void DrawCircle(Ball *ball) 
@@ -122,45 +174,104 @@ void DrawCircle(Ball *ball)
 void main_loop_function() 
 {
     if(myPause == false)
-    {
+    {    
+        //
+        // Check if game should end.
+        //
+
+        if (leftScore.load() > 99 || rightScore.load() > 99)
+        {
+            keyDown('e', 0, 0);
+        }
+
+
+        //
+        // Clean buffer.
+        //
+
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // clear frame
         glClearColor(0.2, 0.2, 0.2, 0);
 
+
+        // 
+        // Draw top and bottom line
         //
-        //  Use async
+
+        glColor3f(1.0, 1.0, 1.0);
+
+        glLineWidth(2);
+
+        glBegin(GL_LINES);
+        glVertex2f(-1, TOP_LINE_Y);
+        glVertex2f(1, TOP_LINE_Y);
+        glEnd();
+
+        glBegin(GL_LINES);
+        glVertex2f(-1, BOTTOM_LINE_Y);
+        glVertex2f(1, BOTTOM_LINE_Y);
+        glEnd();
+
         //
-        #ifdef USE_ASYNC
+        // Draw left Bat.
+        //
+
+        glColor3f(leftBat.getColor().r, leftBat.getColor().g, leftBat.getColor().b);
+
+        glLineWidth(leftBat.getThickness());
+
+        glBegin(GL_LINES);
+        glVertex2f(-1, leftBat.getBottomEdgeYPossition());
+        glVertex2f(-1, leftBat.getBottomEdgeYPossition() + leftBat.getLength());
+        glEnd();
+
+        //
+        // Draw right Bat.
+        //
+
+        glColor3f(rightBat.getColor().r, rightBat.getColor().g, rightBat.getColor().b);
+
+        glLineWidth(rightBat.getThickness());
+
+        glBegin(GL_LINES);
+        glVertex2f(1, rightBat.getBottomEdgeYPossition());
+        glVertex2f(1, rightBat.getBottomEdgeYPossition() + rightBat.getLength());
+        glEnd();
+
+        //
+        // Draw text.
+        //
+
+        std::string score;
+        std::stringstream scoreStream;
+
+        scoreStream << " " << leftScore.load() <<  " : " << rightScore.load();
+
+        score = scoreStream.str();
+
+        const char* pointerScore = score.c_str();
+
+        int w = glutBitmapLength(GLUT_BITMAP_TIMES_ROMAN_24,  (const unsigned char*)pointerScore);
+
+        glRasterPos2f(-0.05, 0.7);
+
+        int len = strlen((const char *)pointerScore);
+
+        for (int i = 0; i < len; i++)
         {
-            std::queue<std::future<int>*> myThreads;
-
-            for (std::vector<Ball*>::iterator it = balls.begin() ; it != balls.end(); ++it)
-            {
-                myThreads.push(new std::future<int> (std::async(&Ball::calculateNevCoordinate, *it)));
-            }
-
-            while(myThreads.empty() != true)
-            {
-                std::future<int> *temp = myThreads.front();
-                //delete temp;
-                myThreads.pop();
-                temp->get();
-            }
-
-            for (std::vector<Ball*>::iterator it = balls.begin() ; it != balls.end(); ++it)
-            {   
-                DrawCircle(*it);
-            }
+            glutBitmapCharacter(GLUT_BITMAP_TIMES_ROMAN_24, *pointerScore);
+            pointerScore++;
         }
-        #else // Use thread
-        {
-            mutexBallsVectorDrawing.lock();
-            for (std::vector<BallWithOwnThread*>::iterator it = balls.begin() ; it != balls.end(); ++it)
-            {   
-                DrawCircle((*it)->ball);
-            }
-            mutexBallsVectorDrawing.unlock();
+
+        //
+        //  Use async.
+        //
+
+        mutexBallsVectorDrawing.lock();
+        for (std::vector<BallWithOwnThread*>::iterator it = balls.begin() ; it != balls.end(); ++it)
+        {   
+            DrawCircle((*it)->ball);
         }
-        #endif
+        mutexBallsVectorDrawing.unlock();
 
         glutSwapBuffers();
 
@@ -173,26 +284,20 @@ void main_loop_function()
     
 }
 
-void keyboard(unsigned char key, int x, int y)
+void keyDown(unsigned char key, int x, int y)
 {
-    if(key=='p' || key=='P')
+    if(key == 'p' || key == 'P')
 	{
-		//myPause = myPause ? 0 : 1;
-
         myPause.store(!myPause.load());
-        
     }
 
-    if(key=='n' || key=='N')
+    if(key == 'n' || key == 'N')
 	{
-        // To change...  mutexes should be set one by one, not both in the same time.
         std::lock(mutexBallsVectorDrawing, mutexBallsVectorCheckingCollizions);
-		//balls.push_back(new Ball(0,-1,0.05,0,0));
-        
+       
         try 
         {
-            balls.push_back(new BallWithOwnThread(&myPause,0,-1,0.05,0,0));
-            //myThreads.push(new std::thread(&Ball::calculateNevCoordinate, (balls.back()), &myPause));
+            balls.push_back(new BallWithOwnThread(&myPause,0,0,0.025,0,0));
         }
         catch (const std::exception& e) 
         {
@@ -209,8 +314,12 @@ void keyboard(unsigned char key, int x, int y)
         mutexBallsVectorCheckingCollizions.unlock();
     }
 
-    if(key=='e' || key=='E')
+    if(key == 'e' || key == 'E')
 	{
+        myEndProgram.store(true);
+        leftBat.endThread();
+        rightBat.endThread();
+
         std::lock(mutexBallsVectorDrawing, mutexBallsVectorCheckingCollizions);
         for (std::vector<BallWithOwnThread*>::iterator it = balls.begin() ; it != balls.end(); ++it)
         {   
@@ -232,6 +341,66 @@ void keyboard(unsigned char key, int x, int y)
 
     }
 
+    //
+    // Drive of left bat.
+    //
+
+    if(key == 'z' || key == 'Z')
+    {
+        //leftBatDirectionsOfMoving.changeDirect;
+
+        leftBat.changeDirect(BOTTOM);
+        // leftBatDirectionsOfMoving.store(BOTTOM);
+    }
+
+    if(key == 'a' || key == 'A')
+    {
+        //leftBatDirectionsOfMoving.store(TOP);
+        leftBat.changeDirect(TOP);
+    }
+
+    //
+    // Drive of right bat.
+    //
+
+    if(key == 'm' || key == 'M')
+    {
+        //rightBatDirectionsOfMoving.store(BOTTOM);
+        rightBat.changeDirect(BOTTOM);
+    }
+
+    if(key == 'k' || key == 'K')
+    {
+        //rightBatDirectionsOfMoving.store(TOP);
+        rightBat.changeDirect(TOP);
+    }
+}
+
+void keyUp(unsigned char key, int x, int y)
+{
+            //std::cout<< "DAWID" << std::endl;
+
+    if((key == 'z' || key == 'Z') &&  leftBat.getDirect() == BOTTOM )
+    {
+        //leftBatDirectionsOfMoving.store(STOP);
+        leftBat.changeDirect(STOP);
+    }
+    else if ((key == 'a' || key == 'A' ) &&  leftBat.getDirect() == TOP )
+    {
+        //leftBatDirectionsOfMoving.store(STOP);
+        leftBat.changeDirect(STOP);
+    }
+
+    if((key == 'm' || key == 'M' ) && rightBat.getDirect() == BOTTOM )
+    {
+        //rightBatDirectionsOfMoving.store(STOP);
+        rightBat.changeDirect(STOP);
+    }
+    else if ((key == 'k' || key == 'K') && rightBat.getDirect() == TOP )
+    {
+        //rightBatDirectionsOfMoving.store(STOP);
+        rightBat.changeDirect(STOP);
+    }
 }
 
 
@@ -240,17 +409,18 @@ int main(int argc, char** argv)
     std::cout << "Process id : " << getpid() << std::endl;
 
     std::thread *threadCheckingCollizion = new std::thread(&checkCollisions, &balls);
-    //checkCollisions(std::vector<BallWithOwnThread*> * const balls)
 
     glutInit(&argc, argv);
     glutInitDisplayMode(GLUT_DOUBLE);
     
-    glutInitWindowSize(640, 640);
+    glutInitWindowSize(800, 800);
     glutInitWindowPosition(100, 100);
     windowID = glutCreateWindow("First");
-    //glutDisplayFunc(RenderScene);
+
     glutIdleFunc(main_loop_function);
-    glutKeyboardFunc(keyboard);
+    glutIgnoreKeyRepeat(1);
+    glutKeyboardFunc(keyDown);
+    glutKeyboardUpFunc(keyUp);
     glutMainLoop();
     return 0;
 }

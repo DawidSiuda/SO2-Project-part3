@@ -9,8 +9,10 @@
 #include <chrono>
 #include <atomic>
 #include <mutex>
+#include <condition_variable>
 
 #include "structures.h"
+#include "Bat.h"
 
 class Ball 
 {
@@ -20,9 +22,6 @@ class Ball
 
     float getX()
     {
-        
-        //std::cout << "GET " << this << " | " << possitX << " | " << possitY << "\n";
-        // return possitX;
         return position.x;
         //return positionX.load();
     }
@@ -52,19 +51,26 @@ class Ball
     void setEndLoop()
     {
         end = true;
+        condition_variableFreeze.notify_all();
     }
 
     void setFrozze()
     {
         isFrozen.store(true);
+        condition_variableFreeze.notify_all();
     }
 
     void setDefrozze()
     {
         isFrozen.store(false);
+        condition_variableFreeze.notify_all();
     }
 
-    int calculateNevCoordinate(const std::atomic<bool> * const pause);
+    int calculateNevCoordinate(const std::atomic<bool> * pause,
+                                     const Bat * const leftBat,
+                                        const Bat * const rightBat,
+                                            std::atomic<int> * const leftScore,
+                                                std::atomic<int> * const rightScore);
 
     static int handleCillizion(Ball *firstBall, Ball *secondBall);
 
@@ -90,6 +96,8 @@ private:
     void setRandomDirectionVertex();
 
     std::mutex mutexChangingDirectionVector;
+
+    std::condition_variable condition_variableFreeze;
 };
 
 #endif //BALL_H

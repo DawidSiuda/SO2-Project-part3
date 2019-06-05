@@ -31,126 +31,140 @@ Ball::Ball(float posX, float posY, float r, float movX, float movY) : position(p
 void Ball::setRandomDirectionVertex()
 {
     int rn = rand();
-    int y = rn % 5 + 1;
-    int x = rn % 21 - 10;
+    int y = 6 - (rn % 12) ;
+    int x = 7 - (rn % 14);
+
+    x = x?x:x+1;
+    y = y?y:y+1;
 
     directionVector.x = x;
     directionVector.y = y;
 }
 
-int Ball::calculateNevCoordinate(const std::atomic<bool> * const pause)
+int Ball::calculateNevCoordinate( const std::atomic<bool> * pause,
+                                     const Bat * const leftBat,
+                                        const Bat * const rightBat,
+                                            std::atomic<int> * const leftScore,
+                                                std::atomic<int> * const rightScore)
 {
     while (end == false)
     {
-        mutexChangingDirectionVector.lock();
-
-        if(pause->load() == false && isFrozen.load() == false)
         {
-            vector2d tempPosition = position;
-            if (isMovingY.load() == true)
+            std::unique_lock<std::mutex> uniqueLockMutexChangingDirectionVector(mutexChangingDirectionVector);
+
+            if(pause->load() == false && isFrozen.load() == false)
             {
-                // Check collision of top wall.
-                if ((tempPosition.y + r) > 1)
-                {
-                    // Align the position of ball.
-                    tempPosition.y = 1.0 - r;
+                vector2d tempPosition = position;
 
-                    // Bounce the ball and subtract 1/4 of acceleration.
-                    directionVector.y = (6.0 * directionVector.y / 7.0);
-                    verticalDirect = -1;
-                }
-                // Check colizion of bottom wall.
-                else if ((tempPosition.y - r) < -1)
-                {
-                    // Set acceleration as null if its end of bounced.
-                    if (directionVector.y < 0.022)
+                if (isMovingY.load() == true)
+                {   //
+                    // Check colizion of top and bottom wall.
+                    //
+
+                    if ((tempPosition.y + r) > TOP_LINE_Y)
                     {
-                        directionVector.y = 0.0;
-                        isMovingY.store(false);
+                        //
+                        // Align the position of ball.
+                        //
+
+                        tempPosition.y = TOP_LINE_Y - r;
+
+                        //
+                        // Change direction.
+                        //
+
+                        verticalDirect = -1;
+                    }
+                    else if ((tempPosition.y - r) < BOTTOM_LINE_Y)
+                    {
+                        //
+                        // Align the position of ball.
+                        //
+
+                        tempPosition.y = BOTTOM_LINE_Y + r;
+
+                        //
+                        // Change direction.
+                        //
+
+                        verticalDirect = 1;
                     }
 
-                    // Align the position of ball.
-                    tempPosition.y = -1.0 + r;
-
-                    // Bounce the ball and subtract 1/4 of acceleration
-                    directionVector.y = (6.0 * directionVector.y / 7.0);
-                    verticalDirect = 1;
-                }
-                // If the ball hang in the air:
-                else if (directionVector.y < 0.01)
-                {
-                    directionVector.y = 0.01;
-                    verticalDirect = -1;
+                    //
+                    // Calculate new coordinates for Y.
+                    //
+                    tempPosition.y += (0.001 * directionVector.y * directionVector.y * verticalDirect);
                 }
 
-                //if(isMovingY == 1 && directionVector.y >0)
+                if (isMovingX.load() == true)
                 {
-                    // If ball in going up.
-                    if (verticalDirect == 1)
+                    //
+                    // Check collision of right and left wall.
+                    //
+
+                    if ((tempPosition.x + r) > 1)
                     {
-                        directionVector.y -= ((5 - directionVector.y) / 500) + (0.1 / (FPS));  // ==> 10m/s
-                        //directionVector.y -= ((5 - directionVector.y) / 500) + (0.02 / (FPS)); // air resistance
+                        if(rightBat->getBottomEdgeYPossition() < tempPosition.y &&
+                            (rightBat->getBottomEdgeYPossition() + rightBat->getLength()) > tempPosition.y)
+                        {
+                            tempPosition.x = 1.0 - r;
+                            directionVector.x *= -1.0;
+                        }
+                        else
+                        {
+                            tempPosition.x = 2;
+                            end = true;
+                            leftScore->store(leftScore->load()+1);
+                        }
+                        
+                        //
+                        // Change direction.
+                        //
+
+                        // directionVector.x *= -1.0;
                     }
-                    // If ball in going down.
-                    else if (verticalDirect == -1)
+                    else if ((tempPosition.x - r) < -1)
                     {
-                        //std::cout << "ZMIANA77" << std::endl;
-                        directionVector.y += ((5 - directionVector.y) / 500) + (0.1 / (FPS)); // ==> 10m/s
+                        // std::cout<<"rightBat->getBottomEdgeYPossition(): " << rightBat->getBottomEdgeYPossition() << std::endl;
+                        // std::cout<< "rightBat->getBottomEdgeYPossition() + rightBat->getLength(): " << rightBat->getBottomEdgeYPossition() + rightBat->getLength() << std::endl;
+                        // std::cout<< "tempPosition.y: "<< tempPosition.y << std::endl;
+
+                        if(leftBat->getBottomEdgeYPossition() < tempPosition.y &&
+                            (leftBat->getBottomEdgeYPossition() + leftBat->getLength()) > tempPosition.y)
+                        {
+                            tempPosition.x = -1.0 + r;
+                            directionVector.x *= -1.0;
+                        }
+                        else
+                        {
+                            tempPosition.x = -2;
+                            end = true;
+                            rightScore->store(rightScore->load()+1);   
+                        }
                     }
+
+                    //
+                    // Calculate new coordinates for X.
+                    //
+
+                    tempPosition.x += (0.005 * directionVector.x);
                 }
-                tempPosition.y += (0.01 * (directionVector.y * directionVector.y) * verticalDirect);
+
+                //
+                // Switch coordinates.
+                //
+
+                position = tempPosition;
+
+                //uniqueLockMutexChangingDirectionVector.release();
+            }
+            else
+            {
+                condition_variableFreeze.wait(uniqueLockMutexChangingDirectionVector, [this]{return (this->isFrozen.load() == false || end == true);});
             }
 
-            if (isMovingX.load() == true)
-            {
-                // Check collision of right wall.
-                if ((tempPosition.x + r) > 1)
-                {
-                    // Align the position of ball.
-                    tempPosition.x = 1.0 - r;
-
-                    // Bounce the ball and subtract 1/7 of acceleration
-                    directionVector.x = (6.0 * directionVector.x / 7.0);
-                    directionVector.x *= -1.0;
-                }
-                // Check collision of left wall.
-                else if ((tempPosition.x - r) < -1)
-                {
-
-                    // Align the position of ball.
-                    tempPosition.x = -1.0 + r;
-
-                    // Bounce the ball and subtract 1/7 of acceleration
-                    directionVector.x = (6.0 * directionVector.x / 7.0);
-                    directionVector.x *= -1.0;
-                }
-
-                if (directionVector.x > 0)
-                {
-                    directionVector.x -= (0.1 / (FPS));
-                }
-                else
-                {
-                    directionVector.x += (0.1 / (FPS));
-                }
-
-                if (directionVector.x < 0.023 && directionVector.x > -0.023)
-                {
-                    isMovingX.store(false);
-                }
-
-                tempPosition.x += (0.01 * directionVector.x);
-            }
-
-            position = tempPosition;
-            // possitX = tempPosition.x;
-            // possitY = tempPosition.y;
-
-            //std::cout << "LOOP " << this << " | " << possitX << " | " << possitY << "\n";
+            //uniqueLockMutexChangingDirectionVector.unlock();
         }
-
-        mutexChangingDirectionVector.unlock();
-
         std::this_thread::sleep_for(std::chrono::milliseconds(1000 / FPS));
     }
 }
@@ -159,11 +173,11 @@ int Ball::handleCillizion(Ball *firstBall, Ball *secondBall)
 {
     if(firstBall->isFrozen.load() == false)
     {
-        firstBall->isFrozen.store(true);
-        secondBall->isFrozen.store(false);
+        firstBall->setFrozze();// isFrozen.store(true);
+        secondBall->setDefrozze();// isFrozen.store(false);
 
-        secondBall->mutexChangingDirectionVector.lock();
-
+        std::lock_guard<std::mutex> lg4(secondBall->mutexChangingDirectionVector);
+        // secondBall->mutexChangingDirectionVector.lock();
         //
         // X
         //
@@ -197,9 +211,17 @@ int Ball::handleCillizion(Ball *firstBall, Ball *secondBall)
             // First <--
             if(secondBall->directionVector.x >= 0)
             {  
-                // Second -->
-                secondBall->directionVector.x = -1.0 *(secondBall->directionVector.x + firstBall->directionVector.x);
-                secondBall->position.x = (firstBall->position.x - firstBall->r) - secondBall->r;
+                // // Second -->
+                // if(secondBall->position.x < firstBall->position.x)
+                // {
+                    secondBall->directionVector.x = -1.0 *(secondBall->directionVector.x + firstBall->directionVector.x);
+                    secondBall->position.x = (firstBall->position.x - firstBall->r) - secondBall->r;
+                // }
+                // else
+                // {
+                //     secondBall->directionVector.x = (secondBall->directionVector.x + firstBall->directionVector.x);
+                //     secondBall->position.x = (firstBall->position.x + firstBall->r) + secondBall->r;
+                // }
             }
             else
             {
@@ -290,13 +312,14 @@ int Ball::handleCillizion(Ball *firstBall, Ball *secondBall)
 
         }
 
-        secondBall->mutexChangingDirectionVector.unlock();
+        //secondBall->mutexChangingDirectionVector.unlock();
 
         #ifdef SET_NULL_AFTER_COLLIZION
-        firstBall->mutexChangingDirectionVector.lock();
+        std::lock_guard<std::mutex> lg3(firstBall->mutexChangingDirectionVector);
+        // firstBall->mutexChangingDirectionVector.lock();
         firstBall->directionVector.x = 0.1;
         firstBall->directionVector.y = 0.1;
-        firstBall->mutexChangingDirectionVector.unlock();
+        //firstBall->mutexChangingDirectionVector.unlock();
         #endif
     }
     else
@@ -313,11 +336,11 @@ int Ball::handleCillizion(Ball *firstBall, Ball *secondBall)
         // Handle colizion.
         //
 
-        firstBall->isFrozen.store(true);
-        secondBall->isFrozen.store(false);
+        firstBall->setFrozze();// isFrozen.store(true);
+        secondBall->setDefrozze();// isFrozen.store(false);
 
-        secondBall->mutexChangingDirectionVector.lock();
-
+        std::lock_guard<std::mutex> lg1(secondBall->mutexChangingDirectionVector);
+        // secondBall->mutexChangingDirectionVector.lock();
         //
         // X
         //
@@ -442,13 +465,13 @@ int Ball::handleCillizion(Ball *firstBall, Ball *secondBall)
 
         }
 
-        secondBall->mutexChangingDirectionVector.unlock();
+        //secondBall->mutexChangingDirectionVector.unlock();
 
         #ifdef SET_NULL_AFTER_COLLIZION
-        firstBall->mutexChangingDirectionVector.lock();
+        std::lock_guard<std::mutex> lg2(firstBall->mutexChangingDirectionVector);
         firstBall->directionVector.x = 0.1;
         firstBall->directionVector.y = 0.1;
-        firstBall->mutexChangingDirectionVector.unlock();
+        // firstBall->mutexChangingDirectionVector.unlock();
         #endif
     }
     return 0;
