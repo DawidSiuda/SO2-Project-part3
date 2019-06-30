@@ -28,20 +28,50 @@ Ball::Ball(float posX, float posY, float r, float movX, float movY) : position(p
     color.b = rand() %100;
 }
 
-void Ball::setRandomDirectionVertex()
+float Ball::getX() const
 {
-    int rn = rand();
-    int y = 6 - (rn % 12) ;
-    int x = 7 - (rn % 14);
-
-    x = x?x:x+1;
-    y = y?y:y+1;
-
-    directionVector.x = x;
-    directionVector.y = y;
+    return position.x;
 }
 
-int Ball::calculateNevCoordinate( const std::atomic<bool> * pause,
+float Ball::getY() const
+{
+    return position.y;
+}
+
+float Ball::getR() const
+{
+    return r;
+}
+
+const Color * const Ball::getColor() const
+{
+    return &color;
+}
+
+bool Ball::getFrozeStatus() const
+{
+    return isFrozen.load();
+}
+
+void Ball::setEndLoop()
+{
+    end = true;
+    condition_variableFreeze.notify_all();
+}
+
+void Ball::setFrozze()
+{
+    isFrozen.store(true);
+    condition_variableFreeze.notify_all();
+}
+
+void Ball::setDefrozze()
+{
+    isFrozen.store(false);
+    condition_variableFreeze.notify_all();
+}
+
+void Ball::calculateNevCoordinate( const std::atomic<bool> * pause,
                                      const Bat * const leftBat,
                                         const Bat * const rightBat,
                                             std::atomic<int> * const leftScore,
@@ -57,7 +87,8 @@ int Ball::calculateNevCoordinate( const std::atomic<bool> * pause,
                 vector2d tempPosition = position;
 
                 if (isMovingY.load() == true)
-                {   //
+                {  
+                    //
                     // Check colizion of top and bottom wall.
                     //
 
@@ -116,19 +147,9 @@ int Ball::calculateNevCoordinate( const std::atomic<bool> * pause,
                             end = true;
                             leftScore->store(leftScore->load()+1);
                         }
-                        
-                        //
-                        // Change direction.
-                        //
-
-                        // directionVector.x *= -1.0;
                     }
                     else if ((tempPosition.x - r) < -1)
                     {
-                        // std::cout<<"rightBat->getBottomEdgeYPossition(): " << rightBat->getBottomEdgeYPossition() << std::endl;
-                        // std::cout<< "rightBat->getBottomEdgeYPossition() + rightBat->getLength(): " << rightBat->getBottomEdgeYPossition() + rightBat->getLength() << std::endl;
-                        // std::cout<< "tempPosition.y: "<< tempPosition.y << std::endl;
-
                         if(leftBat->getBottomEdgeYPossition() < tempPosition.y &&
                             (leftBat->getBottomEdgeYPossition() + leftBat->getLength()) > tempPosition.y)
                         {
@@ -155,21 +176,17 @@ int Ball::calculateNevCoordinate( const std::atomic<bool> * pause,
                 //
 
                 position = tempPosition;
-
-                //uniqueLockMutexChangingDirectionVector.release();
             }
             else
             {
                 condition_variableFreeze.wait(uniqueLockMutexChangingDirectionVector, [this]{return (this->isFrozen.load() == false || end == true);});
             }
-
-            //uniqueLockMutexChangingDirectionVector.unlock();
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(1000 / FPS));
     }
 }
 
-int Ball::handleCillizion(Ball *firstBall, Ball *secondBall)
+void Ball::handleCillizion(Ball *firstBall, Ball *secondBall)
 {
     if(firstBall->isFrozen.load() == false)
     {
@@ -177,7 +194,7 @@ int Ball::handleCillizion(Ball *firstBall, Ball *secondBall)
         secondBall->setDefrozze();// isFrozen.store(false);
 
         std::lock_guard<std::mutex> lg4(secondBall->mutexChangingDirectionVector);
-        // secondBall->mutexChangingDirectionVector.lock();
+
         //
         // X
         //
@@ -187,7 +204,7 @@ int Ball::handleCillizion(Ball *firstBall, Ball *secondBall)
             // First -->
             if(secondBall->directionVector.x > 0)
             {
-                // SECOND -->
+                // Second -->
                 if(secondBall->position.x < firstBall->position.x)
                 {
                     secondBall->directionVector.x = -1.0 *(secondBall->directionVector.x + firstBall->directionVector.x);
@@ -201,7 +218,7 @@ int Ball::handleCillizion(Ball *firstBall, Ball *secondBall)
             }
             else
             {
-                // SECOND <--
+                // Second <--
                 secondBall->directionVector.x = -1.0 *(secondBall->directionVector.x + firstBall->directionVector.x);
                 secondBall->position.x = (firstBall->position.x + firstBall->r) + secondBall->r;
             }
@@ -211,17 +228,8 @@ int Ball::handleCillizion(Ball *firstBall, Ball *secondBall)
             // First <--
             if(secondBall->directionVector.x >= 0)
             {  
-                // // Second -->
-                // if(secondBall->position.x < firstBall->position.x)
-                // {
                     secondBall->directionVector.x = -1.0 *(secondBall->directionVector.x + firstBall->directionVector.x);
                     secondBall->position.x = (firstBall->position.x - firstBall->r) - secondBall->r;
-                // }
-                // else
-                // {
-                //     secondBall->directionVector.x = (secondBall->directionVector.x + firstBall->directionVector.x);
-                //     secondBall->position.x = (firstBall->position.x + firstBall->r) + secondBall->r;
-                // }
             }
             else
             {
@@ -245,22 +253,22 @@ int Ball::handleCillizion(Ball *firstBall, Ball *secondBall)
 
         if(firstBall->verticalDirect > 0)
         {
-            // first ^
+            // First ^
             if(secondBall->verticalDirect > 0)
             {
-                // second ^
+                // Second ^
                 if(secondBall->position.y < firstBall->position.y)
                 {
-                    // firsrt
-                    // second 
+                    // Firsrt
+                    // Second 
                     secondBall->directionVector.y = secondBall->directionVector.y + firstBall->directionVector.y;
                     secondBall->verticalDirect = -1;
                     secondBall->position.y = (firstBall->position.y - firstBall->r) - secondBall->r;
                 }
                 else
                 {
-                    // second
-                    // first
+                    // Second
+                    // First
                     secondBall->directionVector.y = secondBall->directionVector.y + firstBall->directionVector.y;
                     secondBall->verticalDirect = 1;
                     secondBall->position.y = (firstBall->position.y + firstBall->r) + secondBall->r;
@@ -268,21 +276,21 @@ int Ball::handleCillizion(Ball *firstBall, Ball *secondBall)
             }
             else
             {
-                // second v
+                // Second v
                 secondBall->directionVector.y = secondBall->directionVector.y + firstBall->directionVector.y;
                 secondBall->verticalDirect = 1;
             }
         }
         else
         {
-            // first v
+            // First v
             if(secondBall->verticalDirect > 0)
             {
                 // second ^
                 if(secondBall->position.y < firstBall->position.y)
                 {
-                    // firsrt
-                    // second 
+                    // Firsrt
+                    // Second 
                     secondBall->directionVector.y = secondBall->directionVector.y + firstBall->directionVector.y;
                     secondBall->verticalDirect = -1;
                     secondBall->position.y = (firstBall->position.y - firstBall->r) - secondBall->r;
@@ -290,12 +298,12 @@ int Ball::handleCillizion(Ball *firstBall, Ball *secondBall)
             }
             else
             {
-                // second v
+                // Second v
 
                 if(secondBall->position.y < firstBall->position.y)
                 {
-                    // firsrt
-                    // second 
+                    // Firsrt
+                    // Second 
                     secondBall->directionVector.y = secondBall->directionVector.y + firstBall->directionVector.y;
                     secondBall->verticalDirect = -1;
                     secondBall->position.y = (firstBall->position.y - firstBall->r) - secondBall->r;
@@ -312,15 +320,13 @@ int Ball::handleCillizion(Ball *firstBall, Ball *secondBall)
 
         }
 
-        //secondBall->mutexChangingDirectionVector.unlock();
-
         #ifdef SET_NULL_AFTER_COLLIZION
-        std::lock_guard<std::mutex> lg3(firstBall->mutexChangingDirectionVector);
-        // firstBall->mutexChangingDirectionVector.lock();
-        firstBall->directionVector.x = 0.1;
-        firstBall->directionVector.y = 0.1;
-        //firstBall->mutexChangingDirectionVector.unlock();
-        #endif
+        {
+            std::lock_guard<std::mutex> lg3(firstBall->mutexChangingDirectionVector);
+            firstBall->directionVector.x = 0.1;
+            firstBall->directionVector.y = 0.1;
+        }
+        #endif // SET_NULL_AFTER_COLLIZION
     }
     else
     {
@@ -340,7 +346,7 @@ int Ball::handleCillizion(Ball *firstBall, Ball *secondBall)
         secondBall->setDefrozze();// isFrozen.store(false);
 
         std::lock_guard<std::mutex> lg1(secondBall->mutexChangingDirectionVector);
-        // secondBall->mutexChangingDirectionVector.lock();
+
         //
         // X
         //
@@ -398,22 +404,22 @@ int Ball::handleCillizion(Ball *firstBall, Ball *secondBall)
 
         if(firstBall->verticalDirect > 0)
         {
-            // first ^
+            // First ^
             if(secondBall->verticalDirect > 0)
             {
-                // second ^
+                // Second ^
                 if(secondBall->position.y < firstBall->position.y)
                 {
-                    // firsrt
-                    // second 
+                    // Firsrt
+                    // Second 
                     secondBall->directionVector.y = secondBall->directionVector.y + firstBall->directionVector.y;
                     secondBall->verticalDirect = -1;
                     secondBall->position.y = (firstBall->position.y - firstBall->r) - secondBall->r;
                 }
                 else
                 {
-                    // second
-                    // first
+                    // Second
+                    // First
                     secondBall->directionVector.y = secondBall->directionVector.y + firstBall->directionVector.y;
                     secondBall->verticalDirect = 1;
                     secondBall->position.y = (firstBall->position.y + firstBall->r) + secondBall->r;
@@ -421,21 +427,21 @@ int Ball::handleCillizion(Ball *firstBall, Ball *secondBall)
             }
             else
             {
-                // second v
+                // Second v
                 secondBall->directionVector.y = secondBall->directionVector.y + firstBall->directionVector.y;
                 secondBall->verticalDirect = 1;
             }
         }
         else
         {
-            // first v
+            // First v
             if(secondBall->verticalDirect > 0)
             {
-                // second ^
+                // Second ^
                 if(secondBall->position.y < firstBall->position.y)
                 {
-                    // firsrt
-                    // second 
+                    // Firsrt
+                    // Second 
                     secondBall->directionVector.y = secondBall->directionVector.y + firstBall->directionVector.y;
                     secondBall->verticalDirect = -1;
                     secondBall->position.y = (firstBall->position.y - firstBall->r) - secondBall->r;
@@ -443,20 +449,20 @@ int Ball::handleCillizion(Ball *firstBall, Ball *secondBall)
             }
             else
             {
-                // second v
+                // Second v
 
                 if(secondBall->position.y < firstBall->position.y)
                 {
-                    // firsrt
-                    // second 
+                    // Firsrt
+                    // Second 
                     secondBall->directionVector.y = secondBall->directionVector.y + firstBall->directionVector.y;
                     secondBall->verticalDirect = -1;
                     secondBall->position.y = (firstBall->position.y - firstBall->r) - secondBall->r;
                 }
                 else
                 {
-                    // second
-                    // first
+                    // Second
+                    // First
                     secondBall->directionVector.y = secondBall->directionVector.y + firstBall->directionVector.y;
                     secondBall->verticalDirect = 1;
                     secondBall->position.y = (firstBall->position.y + firstBall->r) + secondBall->r;
@@ -465,14 +471,25 @@ int Ball::handleCillizion(Ball *firstBall, Ball *secondBall)
 
         }
 
-        //secondBall->mutexChangingDirectionVector.unlock();
-
         #ifdef SET_NULL_AFTER_COLLIZION
-        std::lock_guard<std::mutex> lg2(firstBall->mutexChangingDirectionVector);
-        firstBall->directionVector.x = 0.1;
-        firstBall->directionVector.y = 0.1;
-        // firstBall->mutexChangingDirectionVector.unlock();
+        {
+            std::lock_guard<std::mutex> lg2(firstBall->mutexChangingDirectionVector);
+            firstBall->directionVector.x = 0.1;
+            firstBall->directionVector.y = 0.1;
+        }
         #endif
     }
-    return 0;
+}
+
+void Ball::setRandomDirectionVertex()
+{
+    int rn = rand();
+    int y = 6 - (rn % 12) ;
+    int x = 7 - (rn % 14);
+
+    x = x?x:x+1;
+    y = y?y:y+1;
+
+    directionVector.x = x;
+    directionVector.y = y;
 }

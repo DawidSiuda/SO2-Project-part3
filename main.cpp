@@ -16,8 +16,14 @@
 #include "structures.h"
 #include "Bat.h"
 
+struct BallWithOwnThread;
+
 void produceNewBall(const std::atomic<bool> *pause, const std::atomic<bool> *end);
+void checkCollisions(std::vector<BallWithOwnThread*> * const balls);
+void DrawCircle(Ball *ball);
+void main_loop_function();
 void keyDown(unsigned char key, int x, int y);
+void keyUp(unsigned char key, int x, int y);
 
 std::atomic<bool> myPause(false);
 std::atomic<bool> myEndProgram(false);
@@ -32,9 +38,10 @@ std::thread *ballProducer = new std::thread(&produceNewBall, &myPause, &myEndPro
 Bat leftBat;
 Bat rightBat;
 
-
 std::atomic<int> leftScore(0);
 std::atomic<int> rightScore(0);
+
+std::vector<BallWithOwnThread*> balls;
 
 struct BallWithOwnThread
 {
@@ -46,7 +53,6 @@ struct BallWithOwnThread
 
     ~BallWithOwnThread()
     {
-        //std::cout<<"Destructor\n";
         delete ball;
         delete thread;
     }
@@ -55,17 +61,13 @@ struct BallWithOwnThread
     std::thread * thread = nullptr;
 };
 
-std::vector<BallWithOwnThread*> balls;
-
 void produceNewBall(const std::atomic<bool> *pause, const std::atomic<bool> *end)
 {
     while(end->load() == false)
     {
         if(pause->load() == false)
         {
-            // To change...  mutexes should be set one by one, not both in the same time.
             std::lock(mutexBallsVectorDrawing, mutexBallsVectorCheckingCollizions);
-            //balls.push_back(new Ball(0,-1,0.05,0,0));
             
             try 
             {
@@ -86,7 +88,6 @@ void produceNewBall(const std::atomic<bool> *pause, const std::atomic<bool> *end
             mutexBallsVectorCheckingCollizions.unlock();
         }
 
-        //std::cout << "DAWID DAWID \n";
         std::this_thread::sleep_for(std::chrono::milliseconds(TIME_TO_CREATE_NEW_BALL));
     }
 }
@@ -95,52 +96,44 @@ void checkCollisions(std::vector<BallWithOwnThread*> * const balls)
 {
     while(myEndProgram.load() == false )
     {
-        // mutexBallsVectorCheckingCollizions.lock();
-        std::lock_guard<std::mutex> lg(mutexBallsVectorCheckingCollizions);
-
-        try
         {
-            int i = 0, j = 0;
-            for (std::vector<BallWithOwnThread*>::iterator itFirstBall = balls->begin() ; itFirstBall  != balls->end(); ++itFirstBall)
-            {   
-                i++;
-                float firstX = (*itFirstBall)->ball->getX();
-                float firstY = (*itFirstBall)->ball->getY();
-                float firstR = (*itFirstBall)->ball->getR();
+            std::lock_guard<std::mutex> lg(mutexBallsVectorCheckingCollizions);
 
-                for (std::vector<BallWithOwnThread*>::iterator itSecondBall = itFirstBall +1 ; itSecondBall  != balls->end(); ++itSecondBall)
+            try
+            {
+                int i = 0, j = 0;
+                for (std::vector<BallWithOwnThread*>::iterator itFirstBall = balls->begin() ; itFirstBall  != balls->end(); ++itFirstBall)
                 {   
-                    j++;
-                    float secondX = (*itSecondBall)->ball->getX();
-                    float secondY = (*itSecondBall)->ball->getY();
-                    float secondR = (*itSecondBall)->ball->getR();
+                    i++;
+                    float firstX = (*itFirstBall)->ball->getX();
+                    float firstY = (*itFirstBall)->ball->getY();
+                    float firstR = (*itFirstBall)->ball->getR();
 
-                    if ( firstX + firstR + secondR > secondX && 
-                         (firstX - firstR) - secondR < secondX &&
-                         firstY + firstR + secondR > secondY &&
-                         (firstY - firstR) - secondR < secondY )
-                    {
-                        // time_t my_time = time(NULL); 
+                    for (std::vector<BallWithOwnThread*>::iterator itSecondBall = itFirstBall +1 ; itSecondBall  != balls->end(); ++itSecondBall)
+                    {   
+                        j++;
+                        float secondX = (*itSecondBall)->ball->getX();
+                        float secondY = (*itSecondBall)->ball->getY();
+                        float secondR = (*itSecondBall)->ball->getR();
 
-                        // std::cout<< my_time << " :Detected collizion : "<< i << "  " << (i+j) << "\n";
-
-                       // Ball::handleCillizion((*itFirstBall)->ball, (*itSecondBall)->ball);
-
+                        if ( firstX + firstR + secondR > secondX && 
+                            (firstX - firstR) - secondR < secondX &&
+                            firstY + firstR + secondR > secondY &&
+                            (firstY - firstR) - secondR < secondY )
+                        {
+                            Ball::handleCillizion((*itFirstBall)->ball, (*itSecondBall)->ball);
+                        }
                     }
                 }
             }
+            catch(...)
+            {
+                std::cout<<"Thrown exception line: " << __LINE__ << " File: " << __FILE__ << ".\n";
+            }
         }
-        catch(...)
-        {
-            std::cout<<"Thrown exception line: " << __LINE__ << " File: " << __FILE__ << ".\n";
-        }
-
-
-        //mutexBallsVectorCheckingCollizions.unlock();
 
         std::this_thread::sleep_for(std::chrono::milliseconds(1000 / FPS));
     }
-    //std::cout << "END\n";
 }
 
 void DrawCircle(Ball *ball) 
@@ -151,8 +144,6 @@ void DrawCircle(Ball *ball)
     float theta=0;
 
     const Color * const color = ball->getColor();
-
-    //std::cout << "Draw " << ballX  << " | " << ballY << "\n";
 
     glColor3b(color->r, color->g, color->b);
 
@@ -168,7 +159,6 @@ void DrawCircle(Ball *ball)
 	}
 
     glEnd();
-
 }
 
 void main_loop_function() 
@@ -184,14 +174,12 @@ void main_loop_function()
             keyDown('e', 0, 0);
         }
 
-
         //
         // Clean buffer.
         //
 
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // clear frame
         glClearColor(0.2, 0.2, 0.2, 0);
-
 
         // 
         // Draw top and bottom line
@@ -342,63 +330,59 @@ void keyDown(unsigned char key, int x, int y)
     }
 
     //
-    // Drive of left bat.
+    // Control of left bat.
     //
 
     if(key == 'z' || key == 'Z')
     {
-        //leftBatDirectionsOfMoving.changeDirect;
-
         leftBat.changeDirect(BOTTOM);
-        // leftBatDirectionsOfMoving.store(BOTTOM);
     }
 
     if(key == 'a' || key == 'A')
     {
-        //leftBatDirectionsOfMoving.store(TOP);
         leftBat.changeDirect(TOP);
     }
 
     //
-    // Drive of right bat.
+    // Control of right bat.
     //
 
     if(key == 'm' || key == 'M')
     {
-        //rightBatDirectionsOfMoving.store(BOTTOM);
         rightBat.changeDirect(BOTTOM);
     }
 
     if(key == 'k' || key == 'K')
     {
-        //rightBatDirectionsOfMoving.store(TOP);
         rightBat.changeDirect(TOP);
     }
 }
 
 void keyUp(unsigned char key, int x, int y)
 {
-            //std::cout<< "DAWID" << std::endl;
+    //
+    // Control of left bat.
+    //
 
     if((key == 'z' || key == 'Z') &&  leftBat.getDirect() == BOTTOM )
     {
-        //leftBatDirectionsOfMoving.store(STOP);
         leftBat.changeDirect(STOP);
     }
     else if ((key == 'a' || key == 'A' ) &&  leftBat.getDirect() == TOP )
     {
-        //leftBatDirectionsOfMoving.store(STOP);
         leftBat.changeDirect(STOP);
     }
 
+    //
+    // Control of right bat.
+    //
+
     if((key == 'm' || key == 'M' ) && rightBat.getDirect() == BOTTOM )
     {
-        //rightBatDirectionsOfMoving.store(STOP);
         rightBat.changeDirect(STOP);
     }
     else if ((key == 'k' || key == 'K') && rightBat.getDirect() == TOP )
     {
-        //rightBatDirectionsOfMoving.store(STOP);
         rightBat.changeDirect(STOP);
     }
 }
@@ -415,12 +399,13 @@ int main(int argc, char** argv)
     
     glutInitWindowSize(800, 800);
     glutInitWindowPosition(100, 100);
-    windowID = glutCreateWindow("First");
+    windowID = glutCreateWindow("Pong 2.0");
 
     glutIdleFunc(main_loop_function);
     glutIgnoreKeyRepeat(1);
     glutKeyboardFunc(keyDown);
     glutKeyboardUpFunc(keyUp);
     glutMainLoop();
+    
     return 0;
 }

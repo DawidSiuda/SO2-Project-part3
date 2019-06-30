@@ -17,4 +17,3 @@ Bat.o: Bat.cpp Bat.h
 
 clean:
 	-rm -f *.o
-

@@ -13,22 +13,23 @@ class Bat
 {
 public:
     Bat();
+
     void changeDirect(int newDirect);
     void endThread();
-    int getDirect()
-    {
-        return direction.load();
-    }
-    //void move(const std::atomic<int> * direction, const std::atomic<bool> *end);
+    int getDirect() const;
+    int getThickness() const;
     float getLength() const;
     float getBottomEdgeYPossition() const;
-    int getThickness() const;
     Color getColor() const;
-    //float getYCenter();
 
 private:
-    //void move(const std::atomic<int> * direction, const std::atomic<bool> *end);
-    void move();
+    //
+    // Function move should be run in new thread.
+    // It's responsible for control the bat and it ends
+    // when "std::atomic<bool> end" storages true. 
+    //
+
+    void move(); 
 
     std::atomic<int> direction;
     std::atomic<bool> end;
